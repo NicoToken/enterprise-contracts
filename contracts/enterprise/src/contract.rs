@@ -36,7 +36,7 @@ use cw2::set_contract_version;
 use cw20::{Cw20Coin, Cw20ReceiveMsg, Logo, MinterResponse};
 use cw721::TokensResponse;
 use cw_asset::{Asset, AssetInfo, AssetInfoBase};
-use cw_storage_plus::Bound;
+use cw_storage_plus::{Bound, Map};
 use cw_utils::{parse_reply_instantiate_data, Duration, Expiration};
 use enterprise_factory_api::msg::QueryMsg::{GlobalAssetWhitelist, GlobalNftWhitelist};
 use enterprise_protocol::api::ClaimAsset::{Cw20, Cw721};
@@ -85,7 +85,7 @@ use std::cmp::min;
 use std::collections::HashMap;
 use std::ops::{Add, Not, Range, Sub};
 use DaoError::{
-    CustomError, InvalidStakingAsset, NoDaoCouncil, NoNftTokenStaked, NoSuchProposal, Unauthorized,
+    InvalidStakingAsset, NoDaoCouncil, NoNftTokenStaked, NoSuchProposal, Unauthorized,
     UnsupportedOperationForDaoType, ZeroInitialWeightMember,
 };
 use DaoMembershipInfo::{Existing, New};
@@ -633,9 +633,10 @@ fn create_poll(
 
     let state = STATE.load(ctx.deps.storage)?;
     if state.proposal_being_created.is_some() {
-        return Err(CustomError {
-            val: "Invalid state - found proposal being created when not expected".to_string(),
-        });
+        return Err(StdError::generic_err(
+            "Invalid state - found proposal being created when not expected",
+        )
+        .into());
     }
     STATE.save(
         ctx.deps.storage,
@@ -853,9 +854,10 @@ fn end_proposal(
 
     let state = STATE.load(ctx.deps.storage)?;
     if state.proposal_being_executed.is_some() {
-        return Err(CustomError {
-            val: "Invalid state: proposal being executed is present when not expected".to_string(),
-        });
+        return Err(StdError::generic_err(
+            "Invalid state: proposal being executed is present when not expected",
+        )
+        .into());
     }
 
     STATE.save(
@@ -1090,24 +1092,7 @@ fn users_with_weight_between(
     let dao_type = DAO_TYPE.load(ctx.deps.storage)?;
 
     match dao_type {
-        Token => {
-            let user_weights = CW20_STAKES
-                .range(ctx.deps.storage, None, None, Ascending)
-                .collect::<StdResult<Vec<(Addr, Uint128)>>>()?
-                .into_iter()
-                .filter_map(|(user, stake)| {
-                    if weight_range.contains(&stake) {
-                        Some(UserWeight {
-                            user: user.to_string(),
-                            weight: stake,
-                        })
-                    } else {
-                        None
-                    }
-                })
-                .collect_vec();
-            Ok(user_weights)
-        }
+        Token => users_from_map_with_weight_between(ctx, CW20_STAKES, weight_range),
         Nft => {
             let mut user_stakes_map: HashMap<Addr, Uint128> = HashMap::new();
 
@@ -1138,25 +1123,31 @@ fn users_with_weight_between(
 
             Ok(user_weights)
         }
-        Multisig => {
-            let user_weights = MULTISIG_MEMBERS
-                .range(ctx.deps.storage, None, None, Ascending)
-                .collect::<StdResult<Vec<(Addr, Uint128)>>>()?
-                .into_iter()
-                .filter_map(|(user, weight)| {
-                    if weight_range.contains(&weight) {
-                        Some(UserWeight {
-                            user: user.to_string(),
-                            weight,
-                        })
-                    } else {
-                        None
-                    }
-                })
-                .collect_vec();
-            Ok(user_weights)
-        }
+        Multisig => users_from_map_with_weight_between(ctx, MULTISIG_MEMBERS, weight_range),
     }
+}
+
+fn users_from_map_with_weight_between(
+    ctx: &Context,
+    weights_map: Map<Addr, Uint128>,
+    weight_range: Range<Uint128>,
+) -> DaoResult<Vec<UserWeight>> {
+    let user_weights = weights_map
+        .range(ctx.deps.storage, None, None, Ascending)
+        .collect::<StdResult<Vec<(Addr, Uint128)>>>()?
+        .into_iter()
+        .filter_map(|(user, stake)| {
+            if weight_range.contains(&stake) {
+                Some(UserWeight {
+                    user: user.to_string(),
+                    weight: stake,
+                })
+            } else {
+                None
+            }
+        })
+        .collect_vec();
+    Ok(user_weights)
 }
 
 fn update_council(ctx: &mut Context, msg: UpdateCouncilMsg) -> DaoResult<Vec<SubMsg>> {
@@ -1350,9 +1341,7 @@ pub fn receive_cw20(ctx: &mut Context, cw20_msg: Cw20ReceiveMsg) -> DaoResult<Re
             };
             create_proposal(ctx, msg, Some(deposit))
         }
-        _ => Err(CustomError {
-            val: "msg payload not recognized".to_string(),
-        }),
+        _ => Err(StdError::generic_err("msg payload not recognized").into()),
     }
 }
 
@@ -1402,9 +1391,7 @@ pub fn receive_cw721(ctx: &mut Context, cw721_msg: ReceiveNftMsg) -> DaoResult<R
                 .add_attribute("total_staked", new_total_staked.to_string())
                 .add_submessage(update_funds_distributor_submsg))
         }
-        _ => Err(CustomError {
-            val: "msg payload not recognized".to_string(),
-        }),
+        _ => Err(StdError::generic_err("msg payload not recognized").into()),
     }
 }
 
@@ -1693,9 +1680,9 @@ pub fn reply(deps: DepsMut, env: Env, msg: Reply) -> DaoResult<Response> {
 
             let state = STATE.load(deps.storage)?;
 
-            let proposal_info = state.proposal_being_created.ok_or(CustomError {
-                val: "Invalid state - missing proposal info".to_string(),
-            })?;
+            let proposal_info = state
+                .proposal_being_created
+                .ok_or_else(|| StdError::generic_err("Invalid state - missing proposal info"))?;
 
             STATE.save(
                 deps.storage,
@@ -1724,8 +1711,8 @@ pub fn reply(deps: DepsMut, env: Env, msg: Reply) -> DaoResult<Response> {
             let ctx = &mut Context { deps, env, info };
             let state = STATE.load(ctx.deps.storage)?;
 
-            let proposal_id = state.proposal_being_executed.ok_or(CustomError {
-                val: "Invalid state - missing ID of proposal being executed".to_string(),
+            let proposal_id = state.proposal_being_executed.ok_or_else(|| {
+                StdError::generic_err("Invalid state - missing ID of proposal being executed")
             })?;
 
             STATE.save(
@@ -1752,7 +1739,7 @@ fn parse_poll_id(msg: Reply) -> DaoResult<PollId> {
     let events = msg
         .result
         .into_result()
-        .map_err(|e| CustomError { val: e })?
+        .map_err(StdError::generic_err)?
         .events;
     let event = events
         .iter()
@@ -1762,24 +1749,18 @@ fn parse_poll_id(msg: Reply) -> DaoResult<PollId> {
                 .iter()
                 .any(|attr| attr.key == "action" && attr.value == "create_poll")
         })
-        .ok_or(CustomError {
-            val: "Reply does not contain create_poll event".to_string(),
-        })?;
+        .ok_or_else(|| StdError::generic_err("Reply does not contain create_poll event"))?;
 
     Uint64::try_from(
         event
             .attributes
             .iter()
             .find(|attr| attr.key == "poll_id")
-            .ok_or(CustomError {
-                val: "create_poll event does not contain poll ID".to_string(),
-            })?
+            .ok_or_else(|| StdError::generic_err("create_poll event does not contain poll ID"))?
             .value
             .as_str(),
     )
-    .map_err(|_| CustomError {
-        val: "Invalid poll ID in reply".to_string(),
-    })
+    .map_err(|_| StdError::generic_err("Invalid poll ID in reply").into())
     .map(|poll_id| poll_id.u64())
 }
 

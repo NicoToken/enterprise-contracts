@@ -250,7 +250,7 @@ fn validate_asset_whitelist_changes(
         .count()
         > 0usize
     {
-        return Err(DaoError::AssetPresentInBothAddAndRemove);
+        return Err(item_present_in_both_lists_err());
     }
     if add_asset_hashsets
         .cw20
@@ -258,7 +258,7 @@ fn validate_asset_whitelist_changes(
         .count()
         > 0usize
     {
-        return Err(DaoError::AssetPresentInBothAddAndRemove);
+        return Err(item_present_in_both_lists_err());
     }
     if add_asset_hashsets
         .cw1155
@@ -266,10 +266,14 @@ fn validate_asset_whitelist_changes(
         .count()
         > 0usize
     {
-        return Err(DaoError::AssetPresentInBothAddAndRemove);
+        return Err(item_present_in_both_lists_err());
     }
 
     Ok(())
+}
+
+fn item_present_in_both_lists_err() -> DaoError {
+    StdError::generic_err("An item is present in both add and remove lists").into()
 }
 
 fn split_asset_hashsets(deps: Deps, assets: &Vec<AssetInfo>) -> DaoResult<AssetInfoHashSets> {
@@ -301,11 +305,7 @@ fn split_asset_hashsets(deps: Deps, assets: &Vec<AssetInfo>) -> DaoResult<AssetI
                     cw1155_assets.insert((addr, id.to_string()));
                 }
             }
-            _ => {
-                return Err(DaoError::CustomError {
-                    val: "Unsupported whitelist asset type".to_string(),
-                })
-            }
+            _ => return Err(StdError::generic_err("Unsupported whitelist asset type").into()),
         }
     }
 
@@ -348,7 +348,7 @@ fn validate_nft_whitelist_changes(
     }
 
     if add_nfts.intersection(&remove_nfts).count() > 0usize {
-        return Err(DaoError::NftPresentInBothAddAndRemove);
+        return Err(item_present_in_both_lists_err());
     }
 
     Ok(())

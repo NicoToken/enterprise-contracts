@@ -101,23 +101,14 @@ pub enum DaoError {
     #[error("An asset is added or removed multiple times")]
     DuplicateAssetFound,
 
-    #[error("An asset is present in both add and remove lists")]
-    AssetPresentInBothAddAndRemove,
-
     #[error("An NFT is added or removed multiple times")]
     DuplicateNftFound,
-
-    #[error("An NFT is present in both add and remove lists")]
-    NftPresentInBothAddAndRemove,
 
     #[error("Error parsing message into Cosmos message")]
     InvalidCosmosMessage,
 
     #[error("This operation is not a supported for {dao_type} DAOs")]
     UnsupportedOperationForDaoType { dao_type: String },
-
-    #[error("Custom Error val: {val}")]
-    CustomError { val: String },
 
     #[error("Invalid argument: {msg}")]
     InvalidArgument { msg: String },
