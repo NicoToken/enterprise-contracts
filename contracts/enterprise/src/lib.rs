@@ -4,6 +4,7 @@ pub mod contract;
 mod cw20;
 mod cw3;
 mod cw721;
+mod migrations;
 pub mod multisig;
 pub mod nft_staking;
 pub mod proposals;

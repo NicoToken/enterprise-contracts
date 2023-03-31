@@ -1,6 +1,7 @@
 use crate::cw20::{Cw20InstantiateMsg, InstantiateMarketingInfo};
 use crate::cw3::{Cw3ListVoters, Cw3VoterListResponse};
 use crate::cw721::{Cw721InstantiateMsg, Cw721QueryMsg};
+use crate::migrations::migrate_v3_to_v4;
 use crate::multisig::{
     load_total_multisig_weight, load_total_multisig_weight_at_height,
     load_total_multisig_weight_at_time, save_total_multisig_weight, MULTISIG_MEMBERS,
@@ -32,7 +33,7 @@ use cosmwasm_std::{
     BlockInfo, Coin, CosmosMsg, Decimal, Deps, DepsMut, Env, MessageInfo, Reply, Response,
     StdError, StdResult, Storage, SubMsg, Timestamp, Uint128, Uint64, WasmMsg,
 };
-use cw2::set_contract_version;
+use cw2::{get_contract_version, set_contract_version};
 use cw20::{Cw20Coin, Cw20ReceiveMsg, Logo, MinterResponse};
 use cw721::TokensResponse;
 use cw_asset::{Asset, AssetInfo, AssetInfoBase};
@@ -109,7 +110,7 @@ pub const FUNDS_DISTRIBUTOR_CONTRACT_INSTANTIATE_REPLY_ID: u64 = 3;
 pub const CREATE_POLL_REPLY_ID: u64 = 4;
 pub const END_POLL_REPLY_ID: u64 = 5;
 
-pub const CODE_VERSION: u8 = 2;
+pub const CODE_VERSION: u8 = 4;
 
 pub const DEFAULT_QUERY_LIMIT: u8 = 50;
 pub const MAX_QUERY_LIMIT: u8 = 100;
@@ -1003,7 +1004,7 @@ fn update_gov_config(ctx: &mut Context, msg: UpdateGovConfigMsg) -> DaoResult<Ve
 
     // if minimum user weight for rewards has changed, we have to update weights in funds distributor
     let submsg = update_minimum_user_weight_for_rewards(
-        ctx,
+        ctx.deps.as_ref(),
         gov_config
             .minimum_user_weight_for_rewards
             .unwrap_or_default(),
@@ -1024,8 +1025,9 @@ fn update_gov_config(ctx: &mut Context, msg: UpdateGovConfigMsg) -> DaoResult<Ve
     Ok(submsgs)
 }
 
-fn update_minimum_user_weight_for_rewards(
-    ctx: &Context,
+// TODO: tests
+pub fn update_minimum_user_weight_for_rewards(
+    deps: Deps,
     old_minimum_weight: Uint128,
     new_minimum_weight: Uint128,
 ) -> DaoResult<Option<SubMsg>> {
@@ -1052,11 +1054,7 @@ fn update_minimum_user_weight_for_rewards(
         }
     };
 
-    // TODO: mentally walk through the following
-    // 1. old_min = 2, new_min = 4
-    // 2. old_min = 4, new_min = 2
-
-    let user_weights_in_range = users_with_weight_between(ctx, range)?;
+    let user_weights_in_range = users_with_weight_between(deps, range)?;
 
     let updated_user_weights = if old_minimum_weight > new_minimum_weight {
         // new_min is lower, so we will report affected users with their actual weights
@@ -1074,7 +1072,7 @@ fn update_minimum_user_weight_for_rewards(
             .collect_vec()
     };
 
-    let funds_distributor = FUNDS_DISTRIBUTOR_CONTRACT.load(ctx.deps.storage)?;
+    let funds_distributor = FUNDS_DISTRIBUTOR_CONTRACT.load(deps.storage)?;
 
     Ok(Some(SubMsg::new(wasm_execute(
         funds_distributor.to_string(),
@@ -1086,18 +1084,18 @@ fn update_minimum_user_weight_for_rewards(
 }
 
 fn users_with_weight_between(
-    ctx: &Context,
+    deps: Deps,
     weight_range: Range<Uint128>,
 ) -> DaoResult<Vec<UserWeight>> {
-    let dao_type = DAO_TYPE.load(ctx.deps.storage)?;
+    let dao_type = DAO_TYPE.load(deps.storage)?;
 
     match dao_type {
-        Token => users_from_map_with_weight_between(ctx, CW20_STAKES, weight_range),
+        Token => users_from_map_with_weight_between(deps, CW20_STAKES, weight_range),
         Nft => {
             let mut user_stakes_map: HashMap<Addr, Uint128> = HashMap::new();
 
             NFT_STAKES()
-                .range(ctx.deps.storage, None, None, Ascending)
+                .range(deps.storage, None, None, Ascending)
                 .collect::<StdResult<Vec<(String, NftStake)>>>()?
                 .into_iter()
                 .for_each(|(_, stake)| {
@@ -1123,17 +1121,17 @@ fn users_with_weight_between(
 
             Ok(user_weights)
         }
-        Multisig => users_from_map_with_weight_between(ctx, MULTISIG_MEMBERS, weight_range),
+        Multisig => users_from_map_with_weight_between(deps, MULTISIG_MEMBERS, weight_range),
     }
 }
 
 fn users_from_map_with_weight_between(
-    ctx: &Context,
+    deps: Deps,
     weights_map: Map<Addr, Uint128>,
     weight_range: Range<Uint128>,
 ) -> DaoResult<Vec<UserWeight>> {
     let user_weights = weights_map
-        .range(ctx.deps.storage, None, None, Ascending)
+        .range(deps.storage, None, None, Ascending)
         .collect::<StdResult<Vec<(Addr, Uint128)>>>()?
         .into_iter()
         .filter_map(|(user, stake)| {
@@ -2435,9 +2433,23 @@ fn is_releasable(claim: &Claim, block_info: &BlockInfo) -> bool {
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
-pub fn migrate(deps: DepsMut, _env: Env, _msg: MigrateMsg) -> DaoResult<Response> {
+pub fn migrate(deps: DepsMut, _env: Env, msg: MigrateMsg) -> DaoResult<Response> {
+    let contract_version = get_contract_version(deps.storage)?;
+
+    let mut deps = deps;
+
+    let mut submsgs: Vec<SubMsg> = vec![];
+
+    if contract_version.version == "0.3.0" {
+        let submsg = migrate_v3_to_v4(deps.branch(), msg)?;
+
+        if let Some(submsg) = submsg {
+            submsgs.push(submsg);
+        }
+    }
+
     DAO_CODE_VERSION.save(deps.storage, &Uint64::from(CODE_VERSION))?;
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
 
-    Ok(Response::new())
+    Ok(Response::new().add_submessages(submsgs))
 }

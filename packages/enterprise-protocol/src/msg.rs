@@ -9,7 +9,7 @@ use crate::api::{
     UserStakeResponse,
 };
 use cosmwasm_schema::{cw_serde, QueryResponses};
-use cosmwasm_std::Addr;
+use cosmwasm_std::{Addr, Uint128};
 use cw20::Cw20ReceiveMsg;
 use cw_asset::AssetInfo;
 
@@ -55,7 +55,9 @@ pub enum Cw721HookMsg {
 }
 
 #[cw_serde]
-pub struct MigrateMsg {}
+pub struct MigrateMsg {
+    pub minimum_user_weight_for_rewards: Option<Uint128>,
+}
 
 #[cw_serde]
 #[derive(QueryResponses)]
