@@ -202,6 +202,10 @@ pub fn apply_gov_config_changes(
         gov_config.minimum_deposit = minimum_deposit;
     }
 
+    if let Change(minimum_user_weight_for_rewards) = msg.minimum_user_weight_for_rewards {
+        gov_config.minimum_user_weight_for_rewards = minimum_user_weight_for_rewards;
+    }
+
     if let Change(allow_early_proposal_execution) = msg.allow_early_proposal_execution {
         gov_config.allow_early_proposal_execution = allow_early_proposal_execution;
     }

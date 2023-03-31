@@ -242,6 +242,7 @@ pub struct UpdateGovConfigMsg {
     pub voting_duration: ModifyValue<Uint64>,
     pub unlocking_period: ModifyValue<Duration>,
     pub minimum_deposit: ModifyValue<Option<Uint128>>,
+    pub minimum_user_weight_for_rewards: ModifyValue<Option<Uint128>>,
     pub allow_early_proposal_execution: ModifyValue<bool>,
 }
 

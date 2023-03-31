@@ -82,7 +82,8 @@ use poll_engine_api::api::{
 };
 use poll_engine_api::error::PollError::PollInProgress;
 use std::cmp::min;
-use std::ops::{Add, Not, Sub};
+use std::collections::HashMap;
+use std::ops::{Add, Not, Range, Sub};
 use DaoError::{
     CustomError, InvalidStakingAsset, NoDaoCouncil, NoNftTokenStaked, NoSuchProposal, Unauthorized,
     UnsupportedOperationForDaoType, ZeroInitialWeightMember,
@@ -992,9 +993,25 @@ fn execute_funding_from_dao(msg: RequestFundingFromDaoMsg) -> DaoResult<Vec<SubM
 }
 
 fn update_gov_config(ctx: &mut Context, msg: UpdateGovConfigMsg) -> DaoResult<Vec<SubMsg>> {
+    let mut submsgs = vec![];
+
     let gov_config = DAO_GOV_CONFIG.load(ctx.deps.storage)?;
 
-    let updated_gov_config = apply_gov_config_changes(gov_config, &msg);
+    let updated_gov_config = apply_gov_config_changes(gov_config.clone(), &msg);
+
+    // if minimum user weight for rewards has changed, we have to update weights in funds distributor
+    let submsg = update_minimum_user_weight_for_rewards(
+        ctx,
+        gov_config
+            .minimum_user_weight_for_rewards
+            .unwrap_or_default(),
+        updated_gov_config
+            .minimum_user_weight_for_rewards
+            .unwrap_or_default(),
+    )?;
+    if let Some(submsg) = submsg {
+        submsgs.push(submsg);
+    }
 
     let dao_type = DAO_TYPE.load(ctx.deps.storage)?;
 
@@ -1002,7 +1019,144 @@ fn update_gov_config(ctx: &mut Context, msg: UpdateGovConfigMsg) -> DaoResult<Ve
 
     DAO_GOV_CONFIG.save(ctx.deps.storage, &updated_gov_config)?;
 
-    Ok(vec![])
+    Ok(submsgs)
+}
+
+fn update_minimum_user_weight_for_rewards(
+    ctx: &Context,
+    old_minimum_weight: Uint128,
+    new_minimum_weight: Uint128,
+) -> DaoResult<Option<SubMsg>> {
+    // if old_min == new_min, nothing to change
+    if old_minimum_weight == new_minimum_weight {
+        return Ok(None);
+    }
+
+    // when minimum weight for rewards changes, we have to update funds distributor weights
+    // for all users whose weights are between the old minimum and the new minimum
+
+    let range = if old_minimum_weight < new_minimum_weight {
+        // old_min < new_min, we need to change for users with old_min <= weight < new_min
+        Range {
+            start: old_minimum_weight,
+            end: new_minimum_weight,
+        }
+    } else {
+        // old minimum > new minimum, we need to change for users with new_min <= weight < old_min
+
+        Range {
+            start: new_minimum_weight,
+            end: old_minimum_weight,
+        }
+    };
+
+    // TODO: mentally walk through the following
+    // 1. old_min = 2, new_min = 4
+    // 2. old_min = 4, new_min = 2
+
+    let user_weights_in_range = users_with_weight_between(ctx, range)?;
+
+    let updated_user_weights = if old_minimum_weight > new_minimum_weight {
+        // new_min is lower, so we will report affected users with their actual weights
+        // as they now qualify for rewards
+        user_weights_in_range
+    } else {
+        // new_min is higher, so we report affected users as 0 weight since they do not
+        // qualify for rewards any longer
+        user_weights_in_range
+            .into_iter()
+            .map(|user_weight| UserWeight {
+                user: user_weight.user,
+                weight: Uint128::zero(),
+            })
+            .collect_vec()
+    };
+
+    let funds_distributor = FUNDS_DISTRIBUTOR_CONTRACT.load(ctx.deps.storage)?;
+
+    Ok(Some(SubMsg::new(wasm_execute(
+        funds_distributor.to_string(),
+        &funds_distributor_api::msg::ExecuteMsg::UpdateUserWeights(UpdateUserWeightsMsg {
+            new_user_weights: updated_user_weights,
+        }),
+        vec![],
+    )?)))
+}
+
+fn users_with_weight_between(
+    ctx: &Context,
+    weight_range: Range<Uint128>,
+) -> DaoResult<Vec<UserWeight>> {
+    let dao_type = DAO_TYPE.load(ctx.deps.storage)?;
+
+    match dao_type {
+        Token => {
+            let user_weights = CW20_STAKES
+                .range(ctx.deps.storage, None, None, Ascending)
+                .collect::<StdResult<Vec<(Addr, Uint128)>>>()?
+                .into_iter()
+                .filter_map(|(user, stake)| {
+                    if weight_range.contains(&stake) {
+                        Some(UserWeight {
+                            user: user.to_string(),
+                            weight: stake,
+                        })
+                    } else {
+                        None
+                    }
+                })
+                .collect_vec();
+            Ok(user_weights)
+        }
+        Nft => {
+            let mut user_stakes_map: HashMap<Addr, Uint128> = HashMap::new();
+
+            NFT_STAKES()
+                .range(ctx.deps.storage, None, None, Ascending)
+                .collect::<StdResult<Vec<(String, NftStake)>>>()?
+                .into_iter()
+                .for_each(|(_, stake)| {
+                    let weight = *user_stakes_map
+                        .get(&stake.staker)
+                        .unwrap_or(&Uint128::zero());
+                    user_stakes_map.insert(stake.staker, weight + Uint128::one());
+                });
+
+            let user_weights = user_stakes_map
+                .into_iter()
+                .filter_map(|(user, weight)| {
+                    if weight_range.contains(&weight) {
+                        Some(UserWeight {
+                            user: user.to_string(),
+                            weight,
+                        })
+                    } else {
+                        None
+                    }
+                })
+                .collect_vec();
+
+            Ok(user_weights)
+        }
+        Multisig => {
+            let user_weights = MULTISIG_MEMBERS
+                .range(ctx.deps.storage, None, None, Ascending)
+                .collect::<StdResult<Vec<(Addr, Uint128)>>>()?
+                .into_iter()
+                .filter_map(|(user, weight)| {
+                    if weight_range.contains(&weight) {
+                        Some(UserWeight {
+                            user: user.to_string(),
+                            weight,
+                        })
+                    } else {
+                        None
+                    }
+                })
+                .collect_vec();
+            Ok(user_weights)
+        }
+    }
 }
 
 fn update_council(ctx: &mut Context, msg: UpdateCouncilMsg) -> DaoResult<Vec<SubMsg>> {
