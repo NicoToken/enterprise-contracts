@@ -935,9 +935,7 @@ fn execute_proposal_actions(ctx: &mut Context, proposal_id: ProposalId) -> DaoRe
             UpdateNftWhitelist(msg) => update_nft_whitelist(ctx.deps.branch(), msg)?,
             UpgradeDao(msg) => upgrade_dao(ctx.env.clone(), msg)?,
             ExecuteMsgs(msg) => execute_msgs(msg)?,
-            ModifyMultisigMembership(msg) => {
-                modify_multisig_membership(ctx.deps.branch(), ctx.env.clone(), msg)?
-            }
+            ModifyMultisigMembership(msg) => modify_multisig_membership(ctx, msg)?,
             DistributeFunds(msg) => distribute_funds(ctx, msg)?,
         };
         submsgs.append(&mut actions)
@@ -1065,39 +1063,43 @@ fn execute_msgs(msg: ExecuteMsgsMsg) -> DaoResult<Vec<SubMsg>> {
 }
 
 fn modify_multisig_membership(
-    deps: DepsMut,
-    env: Env,
+    ctx: &mut Context,
     msg: ModifyMultisigMembershipMsg,
 ) -> DaoResult<Vec<SubMsg>> {
-    validate_modify_multisig_membership(deps.as_ref(), &msg)?;
+    validate_modify_multisig_membership(ctx.deps.as_ref(), &msg)?;
 
-    let mut total_weight = load_total_multisig_weight(deps.storage)?;
+    let mut total_weight = load_total_multisig_weight(ctx.deps.storage)?;
 
     let mut submsgs = vec![];
 
     let mut new_user_weights: Vec<UserWeight> = vec![];
 
+    let gov_config = DAO_GOV_CONFIG.load(ctx.deps.storage)?;
+
     for edit_member in msg.edit_members {
-        let member_addr = deps.api.addr_validate(&edit_member.address)?;
+        let member_addr = ctx.deps.api.addr_validate(&edit_member.address)?;
+
+        let funds_distributor_weight =
+            calculate_funds_distributor_user_weight(&gov_config, edit_member.weight)?;
 
         new_user_weights.push(UserWeight {
             user: edit_member.address,
-            weight: edit_member.weight,
+            weight: funds_distributor_weight,
         });
 
         let old_member_weight = MULTISIG_MEMBERS
-            .may_load(deps.storage, member_addr.clone())?
+            .may_load(ctx.deps.storage, member_addr.clone())?
             .unwrap_or_default();
 
         if edit_member.weight == Uint128::zero() {
-            MULTISIG_MEMBERS.remove(deps.storage, member_addr.clone())
+            MULTISIG_MEMBERS.remove(ctx.deps.storage, member_addr.clone())
         } else {
-            MULTISIG_MEMBERS.save(deps.storage, member_addr.clone(), &edit_member.weight)?
+            MULTISIG_MEMBERS.save(ctx.deps.storage, member_addr.clone(), &edit_member.weight)?
         }
 
         if old_member_weight != edit_member.weight {
             submsgs.push(update_user_votes(
-                deps.as_ref(),
+                ctx.deps.as_ref(),
                 member_addr,
                 edit_member.weight,
             )?);
@@ -1110,9 +1112,9 @@ fn modify_multisig_membership(
         }
     }
 
-    save_total_multisig_weight(deps.storage, total_weight, &env.block)?;
+    save_total_multisig_weight(ctx.deps.storage, total_weight, &ctx.env.block)?;
 
-    let funds_distributor = FUNDS_DISTRIBUTOR_CONTRACT.load(deps.storage)?;
+    let funds_distributor = FUNDS_DISTRIBUTOR_CONTRACT.load(ctx.deps.storage)?;
 
     submsgs.push(SubMsg::new(wasm_execute(
         funds_distributor.to_string(),
@@ -1391,6 +1393,10 @@ fn update_funds_distributor(
     user: Addr,
     new_user_stake: Uint128,
 ) -> DaoResult<SubMsg> {
+    let gov_config = DAO_GOV_CONFIG.load(ctx.deps.storage)?;
+
+    let new_user_weight = calculate_funds_distributor_user_weight(&gov_config, new_user_stake)?;
+
     let funds_distributor = FUNDS_DISTRIBUTOR_CONTRACT.load(ctx.deps.storage)?;
 
     let update_submsg = SubMsg::new(wasm_execute(
@@ -1398,12 +1404,27 @@ fn update_funds_distributor(
         &funds_distributor_api::msg::ExecuteMsg::UpdateUserWeights(UpdateUserWeightsMsg {
             new_user_weights: vec![UserWeight {
                 user: user.to_string(),
-                weight: new_user_stake,
+                weight: new_user_weight,
             }],
         }),
         vec![],
     )?);
     Ok(update_submsg)
+}
+
+fn calculate_funds_distributor_user_weight(
+    gov_config: &DaoGovConfig,
+    user_weight: Uint128,
+) -> DaoResult<Uint128> {
+    let minimum_weight_for_rewards = gov_config
+        .minimum_user_weight_for_rewards
+        .unwrap_or_default();
+
+    if user_weight >= minimum_weight_for_rewards {
+        Ok(user_weight)
+    } else {
+        Ok(Uint128::zero())
+    }
 }
 
 pub fn claim(ctx: &mut Context) -> DaoResult<Response> {

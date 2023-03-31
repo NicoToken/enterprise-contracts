@@ -69,6 +69,7 @@ pub fn stub_dao_gov_config() -> DaoGovConfig {
         vote_duration: 1,
         unlocking_period: Duration::Height(100),
         minimum_deposit: None,
+        minimum_user_weight_for_rewards: Some(Uint128::from(3u8)),
         allow_early_proposal_execution: false,
     }
 }

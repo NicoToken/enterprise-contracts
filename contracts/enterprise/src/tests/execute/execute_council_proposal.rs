@@ -35,6 +35,7 @@ fn execute_proposal_with_outcome_yes_and_ended_executes_proposal_actions() -> Da
         minimum_deposit: None,
         veto_threshold: None,
         allow_early_proposal_execution: false,
+        minimum_user_weight_for_rewards: None,
     };
 
     deps.querier

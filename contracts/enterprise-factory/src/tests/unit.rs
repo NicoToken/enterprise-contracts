@@ -5,7 +5,7 @@ use crate::contract::{
 use common::cw::testing::{mock_env, mock_info};
 use cosmwasm_std::testing::mock_dependencies;
 use cosmwasm_std::{
-    to_binary, Addr, Decimal, Reply, SubMsg, SubMsgResponse, SubMsgResult, WasmMsg,
+    to_binary, Addr, Decimal, Reply, SubMsg, SubMsgResponse, SubMsgResult, Uint128, WasmMsg,
 };
 use cw20::{Cw20Coin, MinterResponse};
 use cw_asset::AssetInfo;
@@ -432,6 +432,7 @@ fn create_existing_membership_dao_instantiates_proper_enterprise_contract() -> D
                 vote_duration: 1000,
                 unlocking_period: Duration::Height(10),
                 minimum_deposit: Some(713u128.into()),
+                minimum_user_weight_for_rewards: Some(Uint128::from(4u8)),
                 allow_early_proposal_execution: false,
             },
             dao_council: Some(dao_council.clone()),
@@ -458,6 +459,7 @@ fn create_existing_membership_dao_instantiates_proper_enterprise_contract() -> D
                         vote_duration: 1000,
                         unlocking_period: Duration::Height(10),
                         minimum_deposit: Some(713u128.into()),
+                        minimum_user_weight_for_rewards: Some(Uint128::from(4u8)),
                         allow_early_proposal_execution: false
                     },
                     dao_council: Some(dao_council),
@@ -558,6 +560,7 @@ fn anonymous_dao_gov_config() -> DaoGovConfig {
         vote_duration: 1000,
         unlocking_period: Duration::Height(10),
         minimum_deposit: Some(713u128.into()),
+        minimum_user_weight_for_rewards: None,
         allow_early_proposal_execution: false,
     }
 }

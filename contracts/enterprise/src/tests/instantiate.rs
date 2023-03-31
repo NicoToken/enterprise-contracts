@@ -87,6 +87,7 @@ fn instantiate_stores_dao_metadata() -> DaoResult<()> {
         vote_duration: 65,
         unlocking_period: Duration::Height(113),
         minimum_deposit: Some(17u8.into()),
+        minimum_user_weight_for_rewards: Some(Uint128::from(3u8)),
         allow_early_proposal_execution: false,
     };
     let dao_council = Some(DaoCouncilSpec {
@@ -765,6 +766,7 @@ fn instantiate_dao_with_zero_voting_duration_fails() -> DaoResult<()> {
         vote_duration: 0u64,
         unlocking_period: Duration::Time(0u64),
         minimum_deposit: None,
+        minimum_user_weight_for_rewards: None,
         allow_early_proposal_execution: false,
     };
 
@@ -803,6 +805,7 @@ fn instantiate_dao_with_shorter_unstaking_than_voting_fails() -> DaoResult<()> {
         vote_duration: 10u64,
         unlocking_period: Duration::Time(9u64),
         minimum_deposit: None,
+        minimum_user_weight_for_rewards: None,
         allow_early_proposal_execution: false,
     };
 
@@ -910,6 +913,7 @@ fn instantiate_dao_with_quorum_over_one_fails() -> DaoResult<()> {
         vote_duration: 10u64,
         unlocking_period: Duration::Time(10u64),
         minimum_deposit: None,
+        minimum_user_weight_for_rewards: None,
         allow_early_proposal_execution: false,
     };
 
@@ -956,6 +960,7 @@ fn instantiate_dao_with_quorum_of_zero_fails() -> DaoResult<()> {
         vote_duration: 10u64,
         unlocking_period: Duration::Time(10u64),
         minimum_deposit: None,
+        minimum_user_weight_for_rewards: None,
         allow_early_proposal_execution: false,
     };
 
@@ -1002,6 +1007,7 @@ fn instantiate_dao_with_threshold_over_one_fails() -> DaoResult<()> {
         vote_duration: 10u64,
         unlocking_period: Duration::Time(10u64),
         minimum_deposit: None,
+        minimum_user_weight_for_rewards: None,
         allow_early_proposal_execution: false,
     };
 
@@ -1048,6 +1054,7 @@ fn instantiate_dao_with_threshold_of_zero_fails() -> DaoResult<()> {
         vote_duration: 10u64,
         unlocking_period: Duration::Time(10u64),
         minimum_deposit: None,
+        minimum_user_weight_for_rewards: None,
         allow_early_proposal_execution: false,
     };
 
@@ -1094,6 +1101,7 @@ fn instantiate_dao_with_veto_threshold_over_one_fails() -> DaoResult<()> {
         vote_duration: 10u64,
         unlocking_period: Duration::Time(10u64),
         minimum_deposit: None,
+        minimum_user_weight_for_rewards: None,
         allow_early_proposal_execution: false,
     };
 
@@ -1140,6 +1148,7 @@ fn instantiate_dao_with_veto_threshold_of_zero_fails() -> DaoResult<()> {
         vote_duration: 10u64,
         unlocking_period: Duration::Time(10u64),
         minimum_deposit: None,
+        minimum_user_weight_for_rewards: None,
         allow_early_proposal_execution: false,
     };
 

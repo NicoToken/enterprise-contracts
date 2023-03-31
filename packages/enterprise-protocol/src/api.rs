@@ -79,6 +79,9 @@ pub struct DaoGovConfig {
     pub unlocking_period: Duration,
     /// Optional minimum amount of DAO's governance unit to be required to create a deposit.
     pub minimum_deposit: Option<Uint128>,
+    /// Optional minimum user weight to be eligible for rewards.
+    /// 'Weight' is either user's total stake for token and NFT DAOs, or user weight in multisig DAOs.
+    pub minimum_user_weight_for_rewards: Option<Uint128>,
     /// If set to true, this will allow DAOs to execute proposals that have reached quorum and
     /// threshold, even before their voting period ends.
     pub allow_early_proposal_execution: bool,

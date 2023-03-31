@@ -138,6 +138,7 @@ fn execute_proposal_with_outcome_yes_and_ended_executes_proposal_actions() -> Da
         unlocking_period: Duration::Time(1000),
         minimum_deposit: None,
         veto_threshold: None,
+        minimum_user_weight_for_rewards: Some(Uint128::from(3u8)),
         allow_early_proposal_execution: false,
     };
 
@@ -322,6 +323,7 @@ fn execute_proposal_with_outcome_yes_and_ended_executes_proposal_actions() -> Da
             vote_duration: 10u64.into(),
             unlocking_period: Duration::Height(10),
             minimum_deposit: Some(Uint128::one()),
+            minimum_user_weight_for_rewards: None,
             allow_early_proposal_execution: true,
         }
     );
@@ -604,6 +606,7 @@ fn execute_proposal_with_outcome_yes_refunds_token_deposits() -> DaoResult<()> {
         minimum_deposit: None,
         veto_threshold: None,
         allow_early_proposal_execution: false,
+        minimum_user_weight_for_rewards: None,
     };
 
     deps.querier
@@ -673,6 +676,7 @@ fn execute_proposal_with_outcome_no_refunds_token_deposits() -> DaoResult<()> {
         minimum_deposit: None,
         veto_threshold: None,
         allow_early_proposal_execution: false,
+        minimum_user_weight_for_rewards: None,
     };
 
     deps.querier
@@ -742,6 +746,7 @@ fn execute_proposal_with_threshold_not_reached_refunds_token_deposits() -> DaoRe
         minimum_deposit: None,
         veto_threshold: None,
         allow_early_proposal_execution: false,
+        minimum_user_weight_for_rewards: None,
     };
 
     deps.querier
@@ -811,6 +816,7 @@ fn execute_proposal_with_quorum_not_reached_does_not_refund_token_deposits() -> 
         minimum_deposit: None,
         veto_threshold: None,
         allow_early_proposal_execution: false,
+        minimum_user_weight_for_rewards: None,
     };
 
     deps.querier
@@ -873,6 +879,7 @@ fn execute_proposal_with_outcome_veto_does_not_refund_token_deposits() -> DaoRes
         minimum_deposit: None,
         veto_threshold: None,
         allow_early_proposal_execution: false,
+        minimum_user_weight_for_rewards: None,
     };
 
     deps.querier
